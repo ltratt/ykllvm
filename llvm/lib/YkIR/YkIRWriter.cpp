@@ -809,9 +809,11 @@ private:
     for (unsigned OI = 0; OI < I->arg_size(); OI++) {
       serialiseOperand(I, FLCtxt, I->getOperand(OI));
     }
-    // safepoint
-    CallInst *SMI = dyn_cast<CallInst>(I->getNextNode());
-    serialiseStackmapCall(SMI, FLCtxt);
+    // statepoints
+    CallInst *SMIBefore = dyn_cast<CallInst>(I->getPrevNode());
+    serialiseStackmapCall(SMIBefore, FLCtxt);
+    CallInst *SMIAfter = dyn_cast<CallInst>(I->getNextNode());
+    serialiseStackmapCall(SMIAfter, FLCtxt);
 
     // If the return type is non-void, then this defines a local.
     if (!I->getType()->isVoidTy()) {
@@ -1045,7 +1047,7 @@ private:
       // The next instruction will be the stackmap entry
       // has_safepoint = 1:
       OutStreamer.emitInt8(1);
-      CallInst *SMI = nullptr;
+      CallInst *SMIBefore, *SMIAfter = nullptr;
 
       // The control point is special. We use a patchpoint to perform the
       // call, so the stackmap is associated with the patchpoint itself.
@@ -1062,11 +1064,13 @@ private:
       // inserts instructions between the call and the stackmap instruction
       // which is (for us, undesirably) reflected in the stackmap entry.
       if (IsCtrlPointCall) {
-        SMI = dyn_cast<CallInst>(I);
+        SMIBefore = SMIAfter = dyn_cast<CallInst>(I);
       } else {
-        SMI = dyn_cast<CallInst>(I->getNextNode());
+        SMIBefore = dyn_cast<CallInst>(I->getPrevNode());
+        SMIAfter = dyn_cast<CallInst>(I->getNextNode());
       }
-      serialiseStackmapCall(SMI, FLCtxt);
+      serialiseStackmapCall(SMIBefore, FLCtxt);
+      serialiseStackmapCall(SMIAfter, FLCtxt);
     } else {
       // has_safepoint = 0:
       OutStreamer.emitInt8(0);

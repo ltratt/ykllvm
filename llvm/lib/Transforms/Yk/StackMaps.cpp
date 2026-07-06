@@ -96,15 +96,14 @@ public:
               }
             }
             if (CF && CF->getName().starts_with("__yk_promote")) {
-              // If it's a call to yk_promote* then the return value of the
-              // promotion needs to be tracked too. This is because the trace
-              // builder will recognise calls to yk_promote specially and
-              // replace them with a guard that deopts to immediately after the
-              // call (at which point the return value is live and needs to be
-              // materialised for correctness).
+              // The "before" stackmap will never be used with yk_promote, so
+              // it doesn't matter what we put here.
+              SMCalls.push_back(
+                  {I.getNextNode(), LA.getLiveVarsBefore(I.getNextNode())});
               SMCalls.push_back(
                   {I.getNextNode(), LA.getLiveVarsBefore(I.getNextNode())});
             } else {
+              SMCalls.push_back({&I, LA.getLiveVarsBefore(&I)});
               SMCalls.push_back({I.getNextNode(), LA.getLiveVarsBefore(&I)});
             }
           } else if ((isa<BranchInst>(I) &&
