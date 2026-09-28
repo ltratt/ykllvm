@@ -12,19 +12,23 @@
 //    the resulting binary is smaller, and we spend less time on serialisation.
 
 #include "llvm/Transforms/Yk/OutlineUntraceable.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Yk/ControlPoint.h"
+#include "llvm/Transforms/Yk/ModuleClone.h"
 #include "llvm/YkIR/YkIRWriter.h"
 
 #include <map>
 #include <set>
+#include <vector>
 
 #define DEBUG_TYPE "yk-outline-untraceable"
 
@@ -109,6 +113,30 @@ public:
           (!F.hasFnAttribute(YK_INDIRECT_INLINE_FNATTR))) {
         F.addFnAttr(YK_OUTLINE_FNATTR);
         Changed = true;
+
+        // For functions that cannot be traced, we can make the "check tracing"
+        // prologue a constant 0: in practise, the entire chunk will then be
+        // optimised away.
+        std::vector<LoadInst *> DispatchLoads;
+        for (Instruction &I : instructions(F))
+          if (auto *Load = dyn_cast<LoadInst>(&I);
+              Load && Load->getMetadata(YK_TRACING_CHECK_MD))
+            DispatchLoads.push_back(Load);
+        for (LoadInst *Load : DispatchLoads) {
+          // If another use has been merged with the dispatch load, leave it
+          // alone: its value might matter outside this check.
+          if (!Load->hasOneUse())
+            continue;
+          auto *Cmp = dyn_cast<ICmpInst>(*Load->user_begin());
+          if (!Cmp || !Cmp->hasOneUse() || !isa<BranchInst>(*Cmp->user_begin()))
+            continue;
+          Load->replaceAllUsesWith(ConstantInt::get(Load->getType(), 0));
+          if (Constant *C = ConstantFoldInstruction(Cmp, M.getDataLayout())) {
+            Cmp->replaceAllUsesWith(C);
+            Cmp->eraseFromParent();
+          }
+          Load->eraseFromParent();
+        }
       }
     }
     return Changed;
