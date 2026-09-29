@@ -200,6 +200,10 @@ void ModuleClonePass::prependTracingCheck(Function *F, Function *OptClone,
   IRBuilder<> Builder(&OrigEntry);
   GlobalVariable *TracingStateTL = getOrCreateThreadTracingState(M);
   LoadInst *State = Builder.CreateLoad(I8Ty, TracingStateTL, "tracing_state");
+  // OutlineUntraceable will later turn this load into a constant -- which
+  // causes things depending on it to be optimised away -- if the check is
+  // unneeded.
+  State->setMetadata(YK_TRACING_CHECK_MD, MDNode::get(Context, {}));
   Value *NotTracing =
       Builder.CreateICmpEQ(State, ConstantInt::get(I8Ty, 0), "not_tracing");
 

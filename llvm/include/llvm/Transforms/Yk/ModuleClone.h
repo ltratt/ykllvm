@@ -8,6 +8,10 @@
 // The prefix for optimised functions.
 #define YK_SWT_OPT_PREFIX "__yk_opt_"
 
+// The name of the metadata for the tracing check inserted at the start of
+// functions.
+#define YK_TRACING_CHECK_MD "yk-tracing-check"
+
 // The name of the metadata indicating that a function is unoptimised.
 #define YK_SWT_OPT_MD YK_SWT_OPT_PREFIX
 
