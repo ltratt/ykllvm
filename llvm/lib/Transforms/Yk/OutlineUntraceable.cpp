@@ -10,8 +10,12 @@
 //
 //  - Because `yk_outline` functions don't have Yk IR serialised, it means that
 //    the resulting binary is smaller, and we spend less time on serialisation.
+//
+// When an outlined function also has an optimised clone, the clone replaces
+// the original body under the original symbol, avoiding duplicate code.
 
 #include "llvm/Transforms/Yk/OutlineUntraceable.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -28,6 +32,8 @@
 
 #include <map>
 #include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 #define DEBUG_TYPE "yk-outline-untraceable"
@@ -96,6 +102,9 @@ public:
   bool runOnModule(Module &M) override {
     InvertedCallGraph IG(M);
     bool Changed = false;
+    // Outlined functions which will be replaced by their fully optimised
+    // clones.
+    std::vector<std::pair<Function *, Function *>> ReplaceWithClone;
 
     for (Function &F : M) {
       // Note that the inverted call graph doesn't take into account indirect
@@ -137,7 +146,26 @@ public:
           }
           Load->eraseFromParent();
         }
+
+        if (!F.getName().starts_with(YK_SWT_OPT_PREFIX)) {
+          // We can replace this function with its optimised clone, so put it
+          // into the queue.
+          Function *Opt =
+              M.getFunction((Twine(YK_SWT_OPT_PREFIX) + F.getName()).str());
+          if (Opt && !Opt->isDeclaration() && Opt->getMetadata(YK_SWT_OPT_MD) &&
+              Opt->getFunctionType() == F.getFunctionType() &&
+              Opt->getLinkage() == F.getLinkage())
+            ReplaceWithClone.push_back({&F, Opt});
+        }
       }
+    }
+    // Defer removal until after the call-graph walk, which holds pointers to
+    // the original functions.
+    for (auto [Orig, Opt] : ReplaceWithClone) {
+      std::string Name = Orig->getName().str();
+      Orig->replaceAllUsesWith(Opt);
+      Orig->eraseFromParent();
+      Opt->setName(Name);
     }
     return Changed;
   }
