@@ -75,10 +75,10 @@ LivenessAnalysis::LivenessAnalysis(Function *Func) {
       if (!I.getType()->isVoidTy())
         Defs[&I].insert(cast<Value>(&I));
 
-      // For normal instructions we just iterate over all operands and mark
-      // them as used. We can't do this for PHI nodes though, since this can
-      // cause liveness of a variable to flow backwards into places it
-      // shouldn't.
+      // For normal instructions (e.g. not lifetime start/ends) we just iterate
+      // over all operands and mark them as used. We can't do this for PHI
+      // nodes though, since this can cause liveness of a variable to flow
+      // backwards into places it shouldn't.
       //
       // Consider the case where we have a PHI node which merges SSA variables
       // defined inside its direct predecessor blocks:
@@ -127,7 +127,7 @@ LivenessAnalysis::LivenessAnalysis(Function *Func) {
           Instruction *Last = &IBB->back();
           Uses[Last].insert(IV);
         }
-      } else {
+      } else if (!I.isLifetimeStartOrEnd()) {
         for (auto *U = I.op_begin(); U < I.op_end(); U++)
           if ((!isa<Constant>(U)) && (!isa<BasicBlock>(U)) &&
               (!isa<MetadataAsValue>(U)) && (!isa<InlineAsm>(U)))
