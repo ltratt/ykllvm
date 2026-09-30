@@ -1163,6 +1163,15 @@ bool TargetPassConfig::addISelPasses() {
   if (YkShadowStackOpt) {
     addPass(createYkShadowStackPass());
   }
+
+  // Stackmaps will happily reference instructions that are later recognised as
+  // dead, keeping them alive unnecessarily. To avoid that, we run DCE before
+  // stackmaps are calculated (which happens in both `createYkControlPointPass`
+  // and/or `createYkStackmapsPass`).
+  if (YkPatchCtrlPoint || YkInsertStackMaps) {
+    addPass(createDeadCodeEliminationPass());
+  }
+
   // We insert the yk control point pass as late as possible. It has to run
   // before instruction selection (or the machine IR won't reflect our
   // patching), but after other passes which mutate the IR (e.g.
